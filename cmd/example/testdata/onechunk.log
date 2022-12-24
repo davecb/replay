@@ -1,0 +1,3 @@
+{"level":"","timestamp":"","message":"thing to grep for goes here","SumTruePositive":0,"SumFalsePositive":0,"SumTrueNegative":0,"SumFalseNegative":0,"NumMinutes":0}
+
+{"level":"INFO","timestamp":"2022-11-06T16:31:07.625-0500","caller":"influx.go:259","message":"thing to grep for goes here","StartTime":"2022-11-06T21:12:00Z","EndTime":"2022-11-06T21:31:00Z","SumTruePositive":28,"SumFalseNegative":8.842105263157897},"NumMinutes":16}}
