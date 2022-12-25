@@ -7,6 +7,7 @@ import (
 	influx "github.com/davecb/replay/pkg/body"
 	"github.com/davecb/replay/pkg/replay"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 	"log"
 	"os"
 	"os/signal"
@@ -14,10 +15,6 @@ import (
 )
 
 func main() {
-
-	var fred replay.ConfusionMatrixInfoLog
-	replay.InfoToJson(fred)
-	os.Exit(-1)
 
 	replayFile, err := getSettingsFromCommandLineFlags()
 	if err != nil {
@@ -31,7 +28,7 @@ func main() {
 	}
 
 	if replayFile != "" {
-		// use a file of replay-data for input instead of ifluxDB
+		// use a file of replay-data for input instead of influxDB
 		err := replay.Open(replayFile, logger)
 		if err != nil {
 			panic(err)
@@ -53,7 +50,7 @@ func main() {
 // runJob is where the real code of your application goes
 func runJob(ctx context.Context, replayFile string, logger *zap.SugaredLogger) error {
 	for i := 0; i < 10; i++ {
-		datum, err := influx.GetInfluxDatum(i)
+		datum, err := influx.GetInfluxDatum(ctx, logger)
 		if err != nil {
 			return err
 		}
@@ -62,24 +59,43 @@ func runJob(ctx context.Context, replayFile string, logger *zap.SugaredLogger) e
 	return nil
 }
 
-// setUpLogger creates a sugared logger for the example
+// setUpLogger creates a sugared logger with caller, timestamp, etc.
 func setUpLogger() (*zap.SugaredLogger, error) {
-	logger, err := zap.NewDevelopment()
+	cfg := &zap.Config{
+		Encoding:    "json",
+		Level:       zap.NewAtomicLevelAt(zapcore.DebugLevel),
+		OutputPaths: []string{"stderr"},
+		EncoderConfig: zapcore.EncoderConfig{
+			TimeKey:      "timestamp",
+			LevelKey:     "level",
+			CallerKey:    "caller",
+			MessageKey:   "message",
+			EncodeTime:   zapcore.ISO8601TimeEncoder,
+			EncodeLevel:  zapcore.CapitalLevelEncoder,
+			EncodeCaller: zapcore.ShortCallerEncoder,
+			LineEnding:   zapcore.DefaultLineEnding,
+		},
+	}
+	_ = cfg.Level.UnmarshalText([]byte("debug"))
+
+	logger, err := cfg.Build()
 	if err != nil {
 		return nil, err
 	}
+
 	return logger.Sugar(), nil
 }
 
+// getSettingsFromCommandLineFlags is a miminal exa mple.
 func getSettingsFromCommandLineFlags() (string, error) {
-	// load config
 	var replay string
-	flag.StringVar(&replay, "replay", "", "file to replay")
 
+	flag.StringVar(&replay, "replay", "", "file to replay")
 	flag.Parse()
 	return replay, nil
 }
 
+// waitForExitSignal calls cancel() if someone hits ^C
 func waitForExitSignal(cancel context.CancelFunc, signals chan os.Signal) {
 	var sig os.Signal
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
