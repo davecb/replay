@@ -15,11 +15,10 @@ import (
 )
 
 func main() {
+	var replayFile string
 
-	replayFile, err := getSettingsFromCommandLineFlags()
-	if err != nil {
-		panic(err)
-	}
+	flag.StringVar(&replayFile, "replay", "", "file to replay")
+	flag.Parse()
 
 	logger, err := setUpLogger()
 	if err != nil {
@@ -59,12 +58,60 @@ func runJob(ctx context.Context, replayFile string, logger *zap.SugaredLogger) e
 	return nil
 }
 
+// FIXME DCB start logger, get good output, then simplify
+
 // setUpLogger creates a sugared logger with caller, timestamp, etc.
 func setUpLogger() (*zap.SugaredLogger, error) {
-	cfg := &zap.Config{
-		Encoding:    "json",
-		Level:       zap.NewAtomicLevelAt(zapcore.DebugLevel),
-		OutputPaths: []string{"stderr"},
+	logger, err := NewLogger(&LoggerConfig{
+		Level:       cfg.Level,
+		Development: cfg.Development,
+		Encoding:    cfg.Encoding,
+		OutputPaths: cfg.OutputPaths,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	zap.ReplaceGlobals(logger)
+	zap.S().Infof("Successfully initialized logger")
+
+	return logger.Sugar(), nil
+}
+
+// LoggerSamplingConfig contains relevant configuration for creating a sampling zap.Logger.
+type LoggerSamplingConfig struct {
+	Initial    int `toml:"initial" mapstructure:"initial"`
+	Thereafter int `toml:"thereafter" mapstructure:"thereafter"`
+}
+
+// LoggerConfig contains relevant configuration for creating a zap.Logger.
+type LoggerConfig struct {
+	Level       string                `toml:"level" mapstructure:"level"`
+	OutputPaths []string              `toml:"output_paths" mapstructure:"output_paths"`
+	Encoding    string                `toml:"encoding" mapstructure:"encoding"`
+	Development bool                  `toml:"development" mapstructure:"development"`
+	Sampling    *LoggerSamplingConfig `toml:"sampling" mapstructure:"sampling"`
+}
+
+var cfg = &LoggerConfig{
+	Level:       "debug",
+	Development: true,
+	Encoding:    "json",
+	OutputPaths: []string{"stderr"},
+}
+
+// newZapConfig maps a LoggerConfig into a zap.Config for creating a zap.Logger.
+func newZapConfig(cfg *LoggerConfig) *zap.Config {
+	var scfg *zap.SamplingConfig
+	if cfg.Sampling != nil {
+		scfg = &zap.SamplingConfig{
+			Initial:    cfg.Sampling.Initial,
+			Thereafter: cfg.Sampling.Thereafter,
+		}
+	}
+	zcfg := &zap.Config{
+		Encoding:    cfg.Encoding,
+		OutputPaths: cfg.OutputPaths,
 		EncoderConfig: zapcore.EncoderConfig{
 			TimeKey:      "timestamp",
 			LevelKey:     "level",
@@ -75,18 +122,19 @@ func setUpLogger() (*zap.SugaredLogger, error) {
 			EncodeCaller: zapcore.ShortCallerEncoder,
 			LineEnding:   zapcore.DefaultLineEnding,
 		},
-	}
-	_ = cfg.Level.UnmarshalText([]byte("debug"))
-
-	logger, err := cfg.Build()
-	if err != nil {
-		return nil, err
+		Development: cfg.Development,
+		Sampling:    scfg,
 	}
 
-	return logger.Sugar(), nil
+	_ = zcfg.Level.UnmarshalText([]byte(cfg.Level))
+	return zcfg
 }
 
-// getSettingsFromCommandLineFlags is a miminal exa mple.
+func NewLogger(cfg *LoggerConfig) (*zap.Logger, error) {
+	return newZapConfig(cfg).Build()
+}
+
+// getSettingsFromCommandLineFlags is a minimal example.
 func getSettingsFromCommandLineFlags() (string, error) {
 	var replay string
 
